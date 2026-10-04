@@ -2,13 +2,14 @@
 // main.cpp —— 演示怎样用一套 Settings 配置驱动渲染
 //
 // 本文件不再写任何场景数值：像素宽高、摄像机距离、背景色、球的大小/颜色/位置、
-// 输出路径，全部来自 settings.h。想换效果只改 settings.cpp 里的 makeDefault()。
+// 输出路径，全部来自 settings.h。想换效果只改 src/settings.cpp 里的 makeDefault()。
 //
 // 本文件只做五件事：读配置 → 校验 → 按配置建场景 → 渲染 → 存盘。
 //
-// 编译：cl /nologo /std:c++17 /W4 /utf-8 /EHsc /O2
-//           main.cpp bitmap.cpp geometry.cpp object.cpp raytracer.cpp settings.cpp
-// 运行：生成的 exe，会按配置里的路径生成位图
+// 构建（二选一）：
+//     直接跑脚本：  .\build.ps1
+//     手动用 CMake：cmake -S . -B build && cmake --build build --config Release
+// 运行：build/bin/bitmap_demo.exe，会按配置里的路径生成位图
 // ============================================================================
 
 #include "bitmap.h"
