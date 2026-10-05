@@ -1,12 +1,18 @@
 <#
 ================================================================================
- build.ps1 - one-command build script
+ build.ps1 - one-command build script for the whole book repository
+
+ The repository is organised by chapter (common/ holds code shared by all
+ chapters). This script configures the root CMake project, builds every target,
+ then runs one chapter's demo.
 
  What it does: locate CMake (prefers the copy bundled with Visual Studio),
- configure, build, then run the program.
+ configure, build, then run the selected program.
 
  Usage:
-     .\build.ps1                       # Release build, then run
+     .\build.ps1                       # Release build, run section_2_demo
+     .\build.ps1 -List                 # list the executables that were built
+     .\build.ps1 -Target <name>        # run a specific executable (no .exe)
      .\build.ps1 -Config Debug         # Debug build
      .\build.ps1 -NoRun                # build only
      .\build.ps1 -Clean                # wipe build/ first, then reconfigure
@@ -31,9 +37,15 @@ param(
 
     [string]$Generator = 'Visual Studio 18 2026',
 
+    # Which executable to run. Run `.\build.ps1 -List` to see what is available.
+    # Chapter demos are named <chapter>_demo (e.g. section_2_demo).
+    [string]$Target = 'section_2_demo',
+
     [switch]$Clean,
 
-    [switch]$NoRun
+    [switch]$NoRun,
+
+    [switch]$List
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,21 +126,57 @@ Write-Step 'Build'
 & $CMakeExe --build $BuildDir --config $Config
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit code $LASTEXITCODE)" }
 
-$Exe = Join-Path $BuildDir 'bin\bitmap_demo.exe'
-if (-not (Test-Path $Exe)) { throw "Build reported success but $Exe is missing." }
+$BinDir = Join-Path $BuildDir 'bin'
+$BuiltExes = @()
+if (Test-Path $BinDir) {
+    $BuiltExes = @(Get-ChildItem $BinDir -Filter '*.exe' -File -ErrorAction SilentlyContinue |
+                   Sort-Object Name)
+}
+
+# ---------------------------------------------------------------------------
+# 5. List available executables, if asked
+# ---------------------------------------------------------------------------
+if ($List) {
+    Write-Step 'Available executables'
+    if ($BuiltExes.Count -eq 0) {
+        Write-Host '  (none built yet)'
+    } else {
+        foreach ($item in $BuiltExes) {
+            Write-Host ("  {0}" -f $item.Name)
+        }
+        Write-Host ''
+        Write-Host 'Run one with:  .\build.ps1 -Target <name without .exe>' -ForegroundColor DarkGray
+    }
+    Write-Step 'Done'
+    return
+}
+
+# ---------------------------------------------------------------------------
+# 6. Pick the executable to run
+#    Each chapter produces its own <chapter>_demo, so the script discovers what
+#    actually exists instead of hard-coding one path. Adding a chapter does not
+#    require touching this script.
+# ---------------------------------------------------------------------------
+$Exe = Join-Path $BinDir "$Target.exe"
+if (-not (Test-Path $Exe)) {
+    $available = if ($BuiltExes.Count -gt 0) {
+        ($BuiltExes | ForEach-Object { $_.Name }) -join ', '
+    } else { '(none)' }
+    throw "Executable '$Target.exe' not found in build/bin. Available: $available"
+}
 Write-Host "Built: $Exe" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# 5. Run
-#     Run from the exe directory so the program writes sphere.bmp into
+# 7. Run
+#     Run from the exe directory so the program writes its output bitmap into
 #     build/bin/ instead of polluting the source tree.
 # ---------------------------------------------------------------------------
 if (-not $NoRun) {
-    Write-Step 'Run'
+    Write-Step "Run $Target"
     # The program prints UTF-8 Chinese text; switch the console output encoding
     # so it is not garbled on a zh-CN console.
     try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
-    Push-Location (Split-Path $Exe -Parent)
+    Push-Location $BinDir
     try {
         & $Exe
         Write-Host "Exit code: $LASTEXITCODE" -ForegroundColor DarkGray

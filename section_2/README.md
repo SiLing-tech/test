@@ -50,18 +50,18 @@
 | 构建工具 | CMake ≥ 3.20。Visual Studio 自带的 CMake 即可，**不需要**单独安装 |
 | 操作系统 | 已在 Windows 10/11 验证；理论上 Linux/macOS 也能构建（CMakeLists 里已分别处理 MSVC 与 GCC/Clang 的编译选项） |
 
-> **用 VS Code / Visual Studio 打开本项目**：根目录已有 `CMakeLists.txt`，
+> **用 VS Code / Visual Studio 打开本项目**：仓库根目录已有 `CMakeLists.txt`，
 > 两个 IDE 都能直接识别并配置，不必手动敲命令。
 
 ### 构建与运行
 
-一条命令搞定（脚本会自动找到 Visual Studio 自带的 CMake）：
+**在仓库根目录**一条命令搞定（脚本会自动找到 Visual Studio 自带的 CMake）：
 
 ```powershell
 .\build.ps1
 ```
 
-看到类似输出即为成功：
+它会配置并编译**整个仓库**（公共库 + 本节），然后运行本节程序。看到类似输出即为成功：
 
 ```
 已生成位图：sphere.bmp  640 x 480
@@ -73,6 +73,13 @@
 ```
 
 生成的位图在 `build/bin/sphere.bmp`。
+
+脚本的其他用法：
+
+```powershell
+.\build.ps1 -List               # 列出已构建出来的可执行程序
+.\build.ps1 -Target <名字>      # 运行指定的可执行程序（不带 .exe）
+```
 
 <details>
 <summary><b>如果提示「无法加载脚本，因为在此系统上禁止运行脚本」</b></summary>
@@ -93,11 +100,25 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ### 不用脚本的话
 
+**方式一：从仓库根目录构建整个仓库**（推荐，产物路径统一）
+
 ```powershell
+cd <仓库根>
 cmake -S . -B build
 cmake --build build --config Release
-.\build\bin\bitmap_demo.exe
+.\build\bin\section_2_demo.exe
 ```
+
+**方式二：只构建本节**（把本节当一个独立项目）
+
+```powershell
+cmake -S section_2 -B build_section_2
+cmake --build build_section_2 --config Release
+.\build_section_2\bin\section_2_demo.exe
+```
+
+这一路径下 `section_2/CMakeLists.txt` 会自己把 `common/` 挂进来，产物落在
+`build_section_2/` 里。两条路径编译出的可执行文件**逐字节等价**，产物哈希完全相同。
 
 ### 其他常用选项
 
@@ -111,48 +132,68 @@ cmake --build build --config Release
 
 ## 目录结构
 
-```
-.
-├── CMakeLists.txt          构建配置
-├── build.ps1               一键构建脚本（定位 CMake → 配置 → 编译 → 运行）
-├── README.md               本文档（中文）
-├── README.en.md            English README
-├── .gitignore              排除构建产物
-│
-├── include/                对外头文件
-│   ├── bitmap.h            位图读写
-│   ├── geometry.h          Vector / Ray
-│   ├── object.h            抽象基类 Object + Sphere
-│   ├── raytracer.h         Raytracer：摄像机 + 场景
-│   └── settings.h          所有可调参数
-│
-├── src/                    实现
-│   ├── bitmap.cpp
-│   ├── geometry.cpp
-│   ├── object.cpp
-│   ├── raytracer.cpp
-│   ├── settings.cpp
-│   └── main.cpp            演示入口
-│
-├── docs/                   文档配图
-│   └── sphere_preview.png
-│
-└── build/                  构建产物（不进版本控制，可随时删除重建）
-    ├── bin/bitmap_demo.exe
-    ├── bin/sphere.bmp      程序运行后生成
-    └── lib/raycast_core.lib
-```
-
-**依赖关系是严格单向的一条链**，没有任何循环包含：
+本节是仓库中的一个章节。**公共代码放在仓库根的 `common/` 下**，供后续章节复用：
 
 ```
-bitmap.h ──→ geometry.h ──→ object.h ──→ raytracer.h ──→ main.cpp
-                                                ↑
-                                          settings.h（不依赖项目内任何头文件）
+book/                         仓库根
+├── CMakeLists.txt            根构建配置：只定义公共库、挂载各章节
+├── build.ps1                 一键构建脚本（定位 CMake → 配置 → 编译 → 运行）
+├── .gitignore                排除构建产物
+│
+├── common/                   ★ 跨章节复用的公共代码
+│   ├── CMakeLists.txt        定义静态库 book_common
+│   ├── include/
+│   │   ├── bitmap.h          位图读写（24 位 BMP）
+│   │   └── geometry.h        Vector / Ray
+│   └── src/
+│       ├── bitmap.cpp
+│       └── geometry.cpp
+│
+├── docs/
+│   └── sphere_preview.png    文档配图
+│
+├── section_2/                ★ 本节
+│   ├── CMakeLists.txt        定义本节算法库与演示程序
+│   ├── README.md             本文档（中文）
+│   ├── README.en.md          English README
+│   ├── include/
+│   │   ├── object.h          抽象基类 Object + Sphere
+│   │   ├── raytracer.h       Raytracer：摄像机 + 场景
+│   │   └── settings.h        本节所有可调参数
+│   └── src/
+│       ├── object.cpp
+│       ├── raytracer.cpp
+│       ├── settings.cpp
+│       └── main.cpp          演示入口
+│
+└── build/                    构建产物（不进版本控制，可随时删除重建）
+    ├── bin/section_2_demo.exe
+    ├── bin/sphere.bmp        程序运行后生成
+    ├── lib/book_common.lib
+    └── lib/section_2_raytracing.lib
+```
+
+**依赖关系是严格单向的一条链**，没有任何循环包含，也没有跨越「公共 / 章节」两层的反向依赖：
+
+```
+common/include/bitmap.h ──→ common/include/geometry.h
+                                      │
+                                      ↓
+                          section_2/include/object.h
+                                      │
+                                      ↓
+                         section_2/include/raytracer.h ──→ src/main.cpp
+                                      ↑
+                        section_2/include/settings.h
+                        （只依赖标准库，不认识上面任何类型）
 ```
 
 `settings.h` 只包含标准库，处在链的最上游 —— 它存数值，但**不认识** `Sphere`、`Raytracer`。
 由 `main.cpp` 把数值从配置里读出来，再交给那些类型去构造。
+
+`common/` 里的 `Bitmap` 与 `Vector`/`Ray` 是「与具体渲染算法无关」的基础设施，所以被抽出去共用；
+而 `Object`、`Raytracer`、`Settings` 属于本节自己的渲染算法，留在 `section_2/` 里 ——
+后续章节完全可以不采用这套设计，自己写一套。
 
 ---
 
@@ -238,7 +279,7 @@ protected:
 
 ## 怎么改参数
 
-**所有可以调的东西都集中在 `src/settings.cpp` 的 `makeDefault()` 里** ——
+**所有可以调的东西都集中在 `section_2/src/settings.cpp` 的 `makeDefault()` 里** ——
 这是全项目唯一写死场景数值的地方。想换效果只改这一个函数：
 
 ```cpp
@@ -299,7 +340,7 @@ double volume() const;   // 按 4/3 * pi * R^3 现算，只用于展示
 
 ## 怎么加新形状
 
-**不需要修改任何现有文件**（除了在 `main.cpp` 里加两行）。新建 `include/box.h` 与 `src/box.cpp`：
+**不需要修改任何现有文件**（除了在 `main.cpp` 里加两行）。新建 `section_2/include/box.h` 与 `section_2/src/box.cpp`：
 
 ```cpp
 #include "object.h"     // 只需要这一个项目头文件
@@ -321,7 +362,7 @@ private:
 };
 ```
 
-然后在 `main.cpp` 里加进去，记得把 `box.cpp` 加进 `CMakeLists.txt` 的 `RAYCAST_CORE_SOURCES`：
+然后在 `main.cpp` 里加进去，并把 `box.cpp` 加进 `section_2/CMakeLists.txt` 里 `section_2_raytracing` 库的源文件列表：
 
 ```cpp
 tracer.add(std::make_unique<Box>(Vector(-60, -60, 700),

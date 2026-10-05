@@ -100,11 +100,26 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ### Without the script
 
+**Option 1: build the whole repository from its root** (recommended — predictable paths)
+
 ```powershell
+cd <repository root>
 cmake -S . -B build
 cmake --build build --config Release
-.\build\bin\bitmap_demo.exe
+.\build\bin\section_2_demo.exe
 ```
+
+**Option 2: build just this section**, treating it as a standalone project
+
+```powershell
+cmake -S section_2 -B build_section_2
+cmake --build build_section_2 --config Release
+.\build_section_2\bin\section_2_demo.exe
+```
+
+On that path `section_2/CMakeLists.txt` pulls in `common/` by itself and artefacts land in
+`build_section_2/`. Both paths produce **byte-identical** executables — the output hashes match
+exactly.
 
 ### Other options
 
@@ -112,55 +127,80 @@ cmake --build build --config Release
 .\build.ps1 -Config Debug      # Debug build
 .\build.ps1 -NoRun             # build only
 .\build.ps1 -Clean             # wipe build/ and reconfigure from scratch
+.\build.ps1 -List              # list the executables that were built
+.\build.ps1 -Target <name>     # run a specific executable (no .exe)
 ```
 
 ---
 
 ## Project layout
 
-```
-.
-├── CMakeLists.txt          build configuration
-├── build.ps1               one-command build script
-├── README.md               Chinese README
-├── README.en.md            this file
-├── .gitignore              excludes build artifacts
-│
-├── include/                public headers
-│   ├── bitmap.h            bitmap storage and BMP writing
-│   ├── geometry.h          Vector / Ray
-│   ├── object.h            abstract base class Object + Sphere
-│   ├── raytracer.h         Raytracer: camera + scene
-│   └── settings.h          every tunable parameter
-│
-├── src/                    implementations
-│   ├── bitmap.cpp
-│   ├── geometry.cpp
-│   ├── object.cpp
-│   ├── raytracer.cpp
-│   ├── settings.cpp
-│   └── main.cpp            demo entry point
-│
-├── docs/                   documentation assets
-│   └── sphere_preview.png
-│
-└── build/                  build output (not tracked, safe to delete)
-    ├── bin/bitmap_demo.exe
-    ├── bin/sphere.bmp      produced by running the program
-    └── lib/raycast_core.lib
-```
-
-**The dependency chain is strictly one-directional**, with no circular includes:
+This section is one chapter of a repository. **Code shared across chapters lives in `common/`
+at the repository root**, so later chapters can reuse it:
 
 ```
-bitmap.h ──→ geometry.h ──→ object.h ──→ raytracer.h ──→ main.cpp
-                                                ↑
-                                          settings.h (depends on nothing in this project)
+book/                         repository root
+├── CMakeLists.txt            root build config: defines the common library, mounts chapters
+├── build.ps1                 one-command build script
+├── .gitignore                excludes build artifacts
+│
+├── common/                   ★ code shared by all chapters
+│   ├── CMakeLists.txt        defines the book_common static library
+│   ├── include/
+│   │   ├── bitmap.h          24-bit BMP storage and writing
+│   │   └── geometry.h        Vector / Ray
+│   └── src/
+│       ├── bitmap.cpp
+│       └── geometry.cpp
+│
+├── docs/
+│   └── sphere_preview.png    documentation asset
+│
+├── section_2/                ★ this chapter
+│   ├── CMakeLists.txt        defines this chapter's library and demo program
+│   ├── README.md             Chinese README
+│   ├── README.en.md          this file
+│   ├── include/
+│   │   ├── object.h          abstract base class Object + Sphere
+│   │   ├── raytracer.h       Raytracer: camera + scene
+│   │   └── settings.h        every tunable parameter for this chapter
+│   └── src/
+│       ├── object.cpp
+│       ├── raytracer.cpp
+│       ├── settings.cpp
+│       └── main.cpp          demo entry point
+│
+└── build/                    build output (not tracked, safe to delete)
+    ├── bin/section_2_demo.exe
+    ├── bin/sphere.bmp        produced by running the program
+    ├── lib/book_common.lib
+    └── lib/section_2_raytracing.lib
+```
+
+**The dependency chain is strictly one-directional**, with no circular includes and no
+back-edges across the common/chapter boundary:
+
+```
+common/include/bitmap.h ──→ common/include/geometry.h
+                                      │
+                                      ↓
+                          section_2/include/object.h
+                                      │
+                                      ↓
+                         section_2/include/raytracer.h ──→ src/main.cpp
+                                      ↑
+                        section_2/include/settings.h
+                        (standard library only; knows none of the above)
 ```
 
 `settings.h` only includes standard headers and sits at the very top of the chain — it stores
 values but does **not** know about `Sphere` or `Raytracer`. `main.cpp` reads the values out of
 the settings and hands them to those types.
+
+In `common/`, `Bitmap` and `Vector`/`Ray` are infrastructure **independent of any rendering
+algorithm**, which is why they were extracted for reuse. `Object`, `Raytracer` and `Settings`
+belong to this chapter's own rendering design and stay in `section_2/` — later chapters are
+free to ignore that design entirely and write their own.
 
 ---
 
@@ -251,7 +291,7 @@ that `Raytracer` becomes non-copyable (explicitly `= delete`d) and movable only.
 
 ## Changing parameters
 
-**Everything tunable lives in `makeDefault()` in `src/settings.cpp`** — the only place in the
+**Everything tunable lives in `makeDefault()` in `section_2/src/settings.cpp`** — the only place in the
 project where scene values are hard-coded. Change that one function to change the picture:
 
 ```cpp
@@ -316,7 +356,7 @@ zero and `NaN` are all rejected:
 
 ## Adding a new shape
 
-**No existing file needs to change.** Create `include/box.h` and `src/box.cpp`:
+**No existing file needs to change.** Create `section_2/include/box.h` and `section_2/src/box.cpp`:
 
 ```cpp
 #include "object.h"     // the only project header you need
@@ -338,7 +378,8 @@ private:
 };
 ```
 
-Then use it in `main.cpp` (and add `box.cpp` to `RAYCAST_CORE_SOURCES` in `CMakeLists.txt`):
+Then use it in `main.cpp` (and add `box.cpp` to the source list of the `section_2_raytracing`
+library in `section_2/CMakeLists.txt`):
 
 ```cpp
 tracer.add(std::make_unique<Box>(Vector(-60, -60, 700),
